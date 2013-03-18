@@ -3,12 +3,17 @@ from boto.ec2 import EC2Connection
 import boto.ec2.elb
 from boto.ec2.elb import ELBConnection
 from boto.exception import BotoServerError
+from optparse import make_option
+import re
 import socket
+import sys
 
 from django.core.management.base import BaseCommand, CommandError
 
 import settings
 
+
+RE_NAMECLASS = re.compile('^(?P<class>\D+)\d+')
 
 def get_my_private_ip():
     """Returns the ip address that routes to the outside world
@@ -32,10 +37,23 @@ class Command(BaseCommand):
     Assumes the name of the security group of the instance matches the name of the load balancer
     """
 
+    option_list = (
+            make_option("-d", "--debug", dest="DEBUG", default=False, action="store_true", help="Run ipdb on exceptions; add extra tracing"),
+            make_option("-e", "--erlang-output", dest="erlang_output", default=False, action="store_true", help="Write output in Erlang's hosts format"),
+            make_option("-o", "--outfile", dest="outfile", default='', help="Write output to file <outfile>"),
+            make_option("-C", "--thisclass", dest="thisclass", default=False, action="store_true", help="Limit output to hosts in this class (app, util)"),
+    ) + BaseCommand.option_list
+
     def handle(self, *args, **options):
         ec2_connection = EC2Connection(settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY)
         regions = boto.ec2.elb.regions()
         my_priv_ip = get_my_private_ip()
+        if options['DEBUG']:
+            sys.stderr.write("self=%s\n" % my_priv_ip)
+        outfile = sys.stdout
+        if options['outfile']:
+            outfile = open(options['outfile'], 'wb')
+        BASEREF = '.c2gops.com' # FIXME: configurable baseref?
 
         for region in regions:
             region_lb_connection = ELBConnection(settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY, region=region)
@@ -46,20 +64,28 @@ class Command(BaseCommand):
             load_balancers = region_lb_connection.get_all_load_balancers()
             instances = [r.instances[0] for r in region_connection.get_all_instances()]
             try:
-                # FIXME: TEST This in dev, stage, prod environments
                 me = [i for i in instances if i.private_ip_address == my_priv_ip][0]
                 my_main_group = me.groups[0].name
             except IndexError:
                 me = None
                 my_main_group = 'dev'
-            instances = [i for i in instances if i.state != u'stopped' and i.groups[0].name == my_main_group]
+            instances = [i for i in instances if i.state != u'stopped' and i.groups[0].name == my_main_group and i.tags.get('Name', False)]
             load_balancers = [lb for lb in load_balancers if lb.name == my_main_group]
+            meclass = 'app'
+            if me and options['thisclass']:
+                m = RE_NAMECLASS.match(me.tags.get('Name', ''))
+                if m:
+                    meclass = m.groups('class')
+            instances = [i for i in instances if i.tags['Name'].startswith(meclass)]
 
             if load_balancers:
-                print region, load_balancers[0]
+                if not options['erlang_output']:
+                    outfile.write("%s %s %s\n" % (meclass, region, load_balancers[0]))
                 for instance in instances:
-                    print instance.tags['Name'], instance.public_dns_name, instance.tags['Name'] + '.c2gops.com' # FIXME assumes basename
+                    i_name = ''.join((instance.tags['Name'], BASEREF))
+                    if options['erlang_output']:
+                        outfile.write("'%s'.\n" % i_name)
+                    else:
+                        outfile.write("%s, %s, %s\n" % (instance.tags['Name'], instance.public_dns_name, i_name))
                     # TODO: we could do a set of socket connections to confirm that it's up on some set of ports we care about
-                    #import ipdb; ipdb.set_trace()
-
             # FIXME: write the interesting information out to disk in some easily usable form

@@ -81,6 +81,9 @@ default_attributes \
     "scalyr" => {
         "write_key" => "1234567890"
     },
+    "ejabberd" => {
+        "erlang_cookie" => "uuiduuid-uuid-uuid-uuid-uuiduuiduuid"
+    },
     "google" => {
         "yt_service_developer_key" => "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "google_client_id" => "nnnnnnnnnnnn.apps.googleusercontent.com",
