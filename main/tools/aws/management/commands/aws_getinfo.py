@@ -43,7 +43,7 @@ class Command(BaseCommand):
             make_option("-d", "--debug", dest="DEBUG", default=False, action="store_true", help="Run ipdb on exceptions; add extra tracing"),
             make_option("-e", "--erlangfile", dest="erlfile", default='', help="Write output in Erlang's hosts format to file <erlangfile>"),
             make_option("-c", "--csvfile", dest="csvfile", default='', help="Write output as csv to file <outfile>"),
-            make_option("-h", "--hostsfile", dest="hostsfile", default='', help="Write output in hosts format to file <hostsfile>"),
+            make_option("-H", "--hostsfile", dest="hostsfile", default='', help="Write output in hosts format to file <hostsfile>"),
             make_option("-C", "--thisclass", dest="thisclass", default=False, action="store_true", help="Limit output to hosts in this class (app, util)"),
     ) + BaseCommand.option_list
 
