@@ -13,7 +13,9 @@ from django.core.management.base import BaseCommand, CommandError
 import settings
 
 
+BASEREF = '.c2gops.com' # FIXME: configurable baseref?
 RE_NAMECLASS = re.compile('^(?P<class>\D+)\d+')
+
 
 def get_my_private_ip():
     """Returns the ip address that routes to the outside world
@@ -39,8 +41,9 @@ class Command(BaseCommand):
 
     option_list = (
             make_option("-d", "--debug", dest="DEBUG", default=False, action="store_true", help="Run ipdb on exceptions; add extra tracing"),
-            make_option("-e", "--erlang-output", dest="erlang_output", default=False, action="store_true", help="Write output in Erlang's hosts format"),
-            make_option("-o", "--outfile", dest="outfile", default='', help="Write output to file <outfile>"),
+            make_option("-e", "--erlangfile", dest="erlfile", default='', help="Write output in Erlang's hosts format to file <erlangfile>"),
+            make_option("-c", "--csvfile", dest="csvfile", default='', help="Write output as csv to file <outfile>"),
+            make_option("-h", "--hostsfile", dest="hostsfile", default='', help="Write output in hosts format to file <hostsfile>"),
             make_option("-C", "--thisclass", dest="thisclass", default=False, action="store_true", help="Limit output to hosts in this class (app, util)"),
     ) + BaseCommand.option_list
 
@@ -50,10 +53,15 @@ class Command(BaseCommand):
         my_priv_ip = get_my_private_ip()
         if options['DEBUG']:
             sys.stderr.write("self=%s\n" % my_priv_ip)
-        outfile = sys.stdout
-        if options['outfile']:
-            outfile = open(options['outfile'], 'wb')
-        BASEREF = '.c2gops.com' # FIXME: configurable baseref?
+        outputs = {}
+        if options['erlfile']:
+            outputs['erl'] = open(options['erlfile'], 'wb')
+        if options['csvfile']:
+            outputs['csv'] = open(options['csvfile'], 'wb')
+        if options['hostsfile']:
+            outputs['hosts'] = open(options['hostsfile'], 'wb')
+        if not outputs:
+            outputs['out'] = sys.stdout
 
         for region in regions:
             region_lb_connection = ELBConnection(settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY, region=region)
@@ -79,13 +87,16 @@ class Command(BaseCommand):
             instances = [i for i in instances if i.tags['Name'].startswith(meclass)]
 
             if load_balancers:
-                if not options['erlang_output']:
-                    outfile.write("%s %s %s\n" % (meclass, region, load_balancers[0]))
+                if 'out' in outputs:
+                    outputs['out'].write("%s %s %s\n" % (meclass, region, load_balancers[0]))
                 for instance in instances:
                     i_name = ''.join((instance.tags['Name'], BASEREF))
-                    if options['erlang_output']:
-                        outfile.write("'%s'.\n" % i_name)
-                    else:
-                        outfile.write("%s, %s, %s\n" % (instance.tags['Name'], instance.public_dns_name, i_name))
+                    if 'erl' in outputs:
+                        outputs['erl'].write("'%s'.\n" % i_name)
+                    if 'csv' in outputs:
+                        outputs['csv'].write("%s, %s, %s, %s\n" % (instance.tags['Name'], instance.ip_address, instance.public_dns_name, i_name))
+                    if 'hosts' in outputs:
+                        outputs['hosts'].write("%s %s\n" % (instance.ip_address, i_name))
+                    if 'out' in outputs:
+                        outputs['out'].write("%s, %s, %s, %s\n" % (instance.tags['Name'], instance.ip_address, instance.public_dns_name, i_name))
                     # TODO: we could do a set of socket connections to confirm that it's up on some set of ports we care about
-            # FIXME: write the interesting information out to disk in some easily usable form
